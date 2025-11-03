@@ -4,7 +4,7 @@ This is a **FastAPI-based microservice** for extracting structured information f
 
 ## 🎯 Purpose
 
-Automates CV parsing for your job recruitment website by identifying and extracting key information like names, skills, education, experience, etc. from candidate resumes.
+Automates CV parsing for your job recruitment website by identifying and extracting key information like names, skills, education, experience, locations, contact details, etc. from candidate resumes across **all industries and professions**.
 
 ## 🏗️ Architecture
 
@@ -13,7 +13,7 @@ Automates CV parsing for your job recruitment website by identifying and extract
 - `main.py` - FastAPI server with 2 endpoints:
   - `GET /` - Health check
   - `POST /extract` - Accepts CV files (PDF/TXT/DOCX) or plain text, returns extracted entities
-- `model_loader.py` - Loads the pre-trained BERT model `yashpwr/resume-ner-bert-v2` for resume entity recognition
+- `model_loader.py` - Loads the pre-trained BERT model `dslim/bert-base-NER` for general-purpose entity recognition plus custom extraction functions for skills, education, and contact information
 
 ## 📦 Tech Stack
 
@@ -21,6 +21,8 @@ Automates CV parsing for your job recruitment website by identifying and extract
 - **Transformers (Hugging Face)** - NER pipeline
 - **PyTorch (CPU)** - ML backend
 - **Docker** - Containerization
+- **PyPDF2** - PDF text extraction
+- **python-docx** - DOCX text extraction
 
 ## 🚀 Getting Started
 
@@ -106,6 +108,8 @@ services:
     ports:
       - "8000:8000"
     restart: unless-stopped
+    environment:
+      - LOG_LEVEL=INFO
 ```
 
 Run with:
@@ -126,12 +130,21 @@ curl http://localhost:8000/
 
 ```bash
 curl -X POST "http://localhost:8000/extract" \
-  -F "text=John Doe, Python Developer with 5 years experience in Django and FastAPI"
+  -F "text=John Doe is a Python Developer with 5 years experience in Django and FastAPI. He works at Google in San Francisco. Contact: john.doe@example.com, +1-555-0123. Education: Bachelor of Computer Science"
 ```
 
-### Extract Entities from File
+### Extract Entities from File (PDF/DOCX/TXT)
 
 ```bash
+# PDF file
+curl -X POST "http://localhost:8000/extract" \
+  -F "file=@resume.pdf"
+
+# DOCX file
+curl -X POST "http://localhost:8000/extract" \
+  -F "file=@resume.docx"
+
+# Text file
 curl -X POST "http://localhost:8000/extract" \
   -F "file=@resume.txt"
 ```
@@ -142,10 +155,16 @@ curl -X POST "http://localhost:8000/extract" \
 {
   "message": "Entity extraction successful",
   "entities": {
-    "NAME": ["John Doe"],
-    "SKILLS": ["Python", "Django", "FastAPI"],
-    "EXPERIENCE": ["5 years"]
-  }
+    "Name": ["John Doe"],
+    "Organization": ["Google"],
+    "Location": ["San Francisco"],
+    "Skills": ["Python", "Django", "FastAPI", "REST API", "Docker", "Git"],
+    "Email": ["john.doe@example.com"],
+    "Phone": ["+1-555-0123"],
+    "Education": ["Bachelor of Computer Science"]
+  },
+  "text_length": 256,
+  "chunks_processed": 1
 }
 ```
 
@@ -155,11 +174,57 @@ curl -X POST "http://localhost:8000/extract" \
 
 - CV file (`.txt`, `.pdf`, `.docx`) OR
 - Plain text content via form data
+- Minimum 10 characters required
 
 **Output:**
 
 - Grouped entities in JSON format
-- Supported entity types: NAME, SKILLS, EDUCATION, EXPERIENCE, etc.
+- **Supported entity types:**
+  - **Name** - Person names (extracted by NER)
+  - **Organization** - Companies, institutions (extracted by NER)
+  - **Location** - Cities, countries, addresses worldwide (extracted by NER)
+  - **Skills** - Technical and professional skills from any industry (section-based extraction)
+  - **Email** - Email addresses (regex-based extraction)
+  - **Phone** - Phone numbers in international formats (regex-based extraction)
+  - **Education** - Degrees, certifications (regex-based extraction)
+  - **Other** - Miscellaneous entities (extracted by NER)
+
+## 🎯 Key Features
+
+### 1. **Universal Industry Support**
+
+Works with CVs from **any profession**:
+
+- Technology: Software Developer, DevOps Engineer, Data Scientist
+- Healthcare: Doctor, Nurse, Medical Technician
+- Business: Accountant, Marketing Manager, HR Specialist
+- Education: Teacher, Professor, Academic Advisor
+- And more...
+
+### 2. **Global Location Recognition**
+
+Extracts locations from **anywhere in the world**:
+
+- Cities: New York, London, Tokyo, Mumbai, São Paulo
+- Countries: United States, United Kingdom, Vietnam, Australia
+- Regions: Silicon Valley, Bay Area, Southeast Asia
+
+### 3. **Hybrid Extraction Approach**
+
+Combines multiple techniques for accuracy:
+
+- **NER Model** (`dslim/bert-base-NER`) - For names, organizations, locations
+- **Section-based parsing** - Finds and extracts skills from CV sections
+- **Regex patterns** - Extracts emails, phones, education degrees
+
+### 4. **Multi-format Support**
+
+Accepts various file formats:
+
+- PDF documents (text-based)
+- Microsoft Word (.docx)
+- Plain text files (.txt)
+- Direct text input
 
 ## 🐳 Image Size Optimization
 
@@ -183,3 +248,20 @@ PORT=8000
 # Logging level
 LOG_LEVEL=INFO
 ```
+
+## 🔍 How It Works
+
+1. **Text Extraction**: Extracts text from uploaded file (PDF/DOCX) or uses provided text
+2. **Text Cleaning**: Removes excessive whitespace and normalizes formatting
+3. **Chunking**: Splits long text into 400-character chunks (BERT token limit)
+4. **NER Processing**: Each chunk is processed by the BERT model to identify entities
+5. **Section Parsing**: Skills section is located and parsed separately
+6. **Regex Extraction**: Contact details and education are extracted using patterns
+7. **Post-processing**: Results are cleaned, deduplicated, and grouped by entity type
+
+## ⚠️ Limitations
+
+- PDF text extraction works best with text-based PDFs (not scanned images)
+- Skills extraction depends on proper section formatting in the CV
+- Phone number patterns may not cover all international formats
+- Very long CVs (>10 pages) may take longer to process
